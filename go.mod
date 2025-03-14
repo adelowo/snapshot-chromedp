@@ -1,4 +1,4 @@
-module github.com/go-echarts/snapshot-chromedp
+module github.com/adelowo/snapshot-chromedp
 
 go 1.18
 

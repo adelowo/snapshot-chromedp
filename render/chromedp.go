@@ -1,9 +1,11 @@
 package render
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -42,14 +44,21 @@ type SnapshotConfig struct {
 	Timeout time.Duration
 	// MultiCharts Only enable it when you have multi charts in the single page, better to set larger quality
 	MultiCharts bool
+
+	Writer io.Writer
 }
 
 type SnapshotConfigOption func(config *SnapshotConfig)
 
 func NewSnapshotConfig(content []byte, image string, opts ...SnapshotConfigOption) *SnapshotConfig {
-	path, file := filepath.Split(image)
-	suffix := filepath.Ext(file)[1:]
-	fileName := file[0 : len(file)-len(suffix)-1]
+
+	var fileName, suffix, path, file string
+
+	if image != "" {
+		path, file = filepath.Split(image)
+		suffix := filepath.Ext(file)[1:]
+		fileName = file[0 : len(file)-len(suffix)-1]
+	}
 
 	config := &SnapshotConfig{
 		RenderContent: content,
@@ -65,6 +74,12 @@ func NewSnapshotConfig(content []byte, image string, opts ...SnapshotConfigOptio
 		o(config)
 	}
 	return config
+}
+
+func MakeChartSnapshotWriter(content []byte, w io.Writer) error {
+	cfg := NewSnapshotConfig(content, "")
+	cfg.Writer = w
+	return MakeSnapshot(cfg)
 }
 
 func MakeChartSnapshot(content []byte, image string) error {
@@ -135,13 +150,17 @@ func MakeSnapshot(config *SnapshotConfig) error {
 		return err
 	}
 
-	imageFullPath := filepath.Join(path, fmt.Sprintf("%s.%s", fileName, suffix))
-	if err := os.WriteFile(imageFullPath, imgContent, 0o644); err != nil {
-		return err
+	if config.Writer == nil {
+		imageFullPath := filepath.Join(path, fmt.Sprintf("%s.%s", fileName, suffix))
+		if err := os.WriteFile(imageFullPath, imgContent, 0o644); err != nil {
+			return err
+		}
+		log.Printf("Wrote %s.%s success", fileName, suffix)
+		return nil
 	}
 
-	log.Printf("Wrote %s.%s success", fileName, suffix)
-	return nil
+	_, err = io.Copy(config.Writer, bytes.NewBuffer(imgContent))
+	return err
 }
 
 func snapshotSingleChart(ctx context.Context, pagePath string, executeJS string) ([]byte, error) {
